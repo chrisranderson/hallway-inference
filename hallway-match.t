@@ -12,8 +12,12 @@ local ffi = require('ffi')
 
 -- config
 local TARGET_IMAGE_NAME = 'out116'
-local IMAGE_WIDTH = 150.0
-local IMAGE_HEIGHT = 84.0
+
+local IMAGE_WIDTH = 50
+local IMAGE_HEIGHT = 88
+
+local IMAGE_WIDTH = 150
+local IMAGE_HEIGHT = 84
 --
 
 -- manual casting from dualnum to float
@@ -85,7 +89,6 @@ end
 function get_bounds(edges, row)
   -- print('\nGET_BOUNDS')
   local bounds = {}
-
   for i = 1, #edges do
     local edge = edges[i]
     local percent_done = (row - edge[1].y) / (edge[2].y - edge[1].y)
@@ -109,30 +112,46 @@ function render_quad(image, top_left, top_right, bottom_right, bottom_left, rgb)
     local active_edges = get_active_edges(edges, row)
     local bounds = get_bounds(active_edges, row)
 
-    local left_bound = min(bounds[1], bounds[2])
-    local right_bound = max(bounds[1], bounds[2])
+    -- print('bounds', bounds[1], bounds[2])
+
+    local bound1 = bounds[1]
+    local bound2 = bounds[2]
+
+    if not bound1 then
+      bound1 = 150
+    end
+
+    if not bound2 then bound2 = 150 end
+
+    local left_bound = min(bound1, bound2)
+    local right_bound = max(bound1, bound2)
 
     if row < 1 then row = 1 end
     if left_bound < 1 then left_bound = 1 end
     if right_bound < 1 then right_bound = 1 end
 
-    if row > IMAGE_HEIGHT then row = IMAGE_HEIGHT end
+    if row > IMAGE_HEIGHT then 
+      row = IMAGE_HEIGHT 
+    end
     if left_bound > IMAGE_WIDTH then left_bound = IMAGE_WIDTH end
     if right_bound > IMAGE_WIDTH then right_bound = IMAGE_WIDTH end
 
-    -- print('row, left_bound, right_bound', row, left_bound, right_bound)
 
-    for color_index=1, 1 do
-      image[{
-        color_index,
-        row,
-        {left_bound, right_bound}}] = rgb[color_index]
+    image[{1, row, {left_bound, right_bound}}] = rgb[1]
 
-    end
+    
   end
 
   return image
 end
+
+local init_x_center = IMAGE_WIDTH/2.0
+local init_y_center = IMAGE_HEIGHT/2.0
+local init_width = 20.0
+local init_floor_intensity = .3
+local init_ceiling_intensity = .5
+local init_wall_intensity = .7
+local init_square_intensity = .8
 
 function infer_scene(filename)
   local p2 = qs.program(function()
@@ -151,6 +170,7 @@ function infer_scene(filename)
     end
 
     local best_difference = 99999
+
 
     local sample_number = 1
     local get_image_difference = function (x_center, y_center, width, height, floor_intensity, ceiling_intensity, wall_intensity, square_intensity)
@@ -196,6 +216,16 @@ function infer_scene(filename)
         best_difference = difference
         print('best difference: ', difference)
         torch_image.save(filename ..'-best.png', copy)
+
+        init_x_center = x_center 
+        init_y_center = y_center 
+        init_width = width 
+        init_floor_intensity = floor_intensity 
+        init_ceiling_intensity = ceiling_intensity 
+        init_wall_intensity = wall_intensity 
+        init_square_intensity = square_intensity 
+
+        -- print('init_x_center, init_y_center, init_width, init_floor_intensity, init_ceiling_intensity, init_wall_intensity, init_square_intensity', init_x_center, init_y_center, init_width, init_floor_intensity, init_ceiling_intensity, init_wall_intensity, init_square_intensity)
       end
 
       return difference
@@ -205,21 +235,43 @@ function infer_scene(filename)
 
     return terra()
 
-      var x_center = qs.gaussian(IMAGE_WIDTH/2.0, 10.0, {struc=false})
-      var y_center = qs.gaussian(IMAGE_HEIGHT/2.0, 10.0, {struc=false})
+      -- var x_center = qs.gaussian(IMAGE_WIDTH/2.0, 15.0, {struc=false})
+      -- var y_center = qs.gaussian(IMAGE_HEIGHT/2.0, 15.0, {struc=false})
 
-      var width = qs.gaussian(20.0, 5.0, {struc=false})
-      var height = qs.gaussian(20.0, 5.0, {struc=false})
+      -- var width = qs.gaussian(30.0, 5.0, {struc=false})
+      -- var height = qs.gaussian(30.0, 5.0, {struc=false})
 
-      var floor_intensity = qs.uniform(0.0, 1.0, {struc=false})
-      var ceiling_intensity = qs.uniform(0.0, 1.0, {struc=false})
-      var wall_intensity = qs.uniform(0.0, 1.0, {struc=false})
-      var square_intensity = qs.uniform(0.0, 1.0, {struc=false})
+      -- var floor_intensity = qs.gaussian(.18, .05, {struc=false})
+      -- var ceiling_intensity = qs.gaussian(.44, .05, {struc=false})
+      -- var wall_intensity = qs.gaussian(.396, .05, {struc=false})
+      -- var square_intensity = qs.gaussian(.7, .05, {struc=false})
+
+      -- var difference = terra_get_image_diff(x_center, y_center, width, height, floor_intensity, ceiling_intensity, wall_intensity, square_intensity)
+
+      -- -- should take into account previous difference
+      -- qs.factor(-difference)
+
+      var x_center = qs.uniform(IMAGE_WIDTH/2.0-(IMAGE_WIDTH/2.0), IMAGE_WIDTH/2.0+(IMAGE_WIDTH/2.0), {init=[init_x_center] ,struc=false})
+      var y_center = qs.uniform(IMAGE_HEIGHT/2.0-(IMAGE_HEIGHT/2.0), IMAGE_HEIGHT/2.0+(IMAGE_HEIGHT/2.0), {init=[init_y_center] ,struc=false})
+
+      var width = qs.uniform(5.0, IMAGE_WIDTH/2.0, {init=[init_width] ,struc=false})
+      var height = 1.2*width
+
+      if not (width > 0) then
+        print('nan problem')
+        return 0
+      end
+
+      var floor_intensity = qs.uniform(.2, .5, {init=[init_floor_intensity] ,struc=false})
+      var ceiling_intensity = qs.uniform(.25, .75, {init=[init_ceiling_intensity] ,struc=false})
+      var wall_intensity = qs.uniform(0.25, .75, {init=[init_wall_intensity] ,struc=false})
+      -- var square_intensity = qs.uniform(.5, 1, {init=[init_square_intensity] ,struc=false})
+      var square_intensity = 1
 
       var difference = terra_get_image_diff(x_center, y_center, width, height, floor_intensity, ceiling_intensity, wall_intensity, square_intensity)
 
       -- should take into account previous difference
-      qs.factor(-difference)
+      qs.factor(-difference/8)
 
       return 0
     end
@@ -230,7 +282,7 @@ function infer_scene(filename)
   -- HARMKernel works great and fast
   -- DriftKernel is really accurate
   -- HMC breaks quickly
-  local infer = qs.infer(p2, qs.MAP, qs.MCMC(qs.DriftKernel(), {numsamps=50000, verbose=true}))
+  local infer = qs.infer(p2, qs.MAP, qs.MCMC(qs.TraceMHKernel(), {numsamps=1000, verbose=true}))
 
   local terra run()
     std.printf('%f', infer())
@@ -250,13 +302,19 @@ function left_pad(x)
 end
 
 
-for i=217, 217 do
+for i=180, 576 do
+  print('i', i)
   infer_scene('data/out'..left_pad(i)..'.png')
 end
 
--- run it longer
--- expectation
--- different sampling techniques
+--[[ IDEAS
+  factor relationships among variables
+]] 
+
+
+
+
+-- PIPELINE FOR DATA PREPARATION
 
 -- resize from big .mov file
 -- ffmpeg -i hallway_1.mov -vf scale=150:-1 smaller.mov
@@ -277,8 +335,8 @@ end
 
 -- horizontal combine both movies
 --[[
-ffmpeg -i 1.mov -i 2.mov -filter_complex \
+ffmpeg -i 2crazy-1.mov -i 2-crazy2.mov -filter_complex \
 '[0:v]pad=iw*2:ih[int];[int][1:v]overlay=W/2:0[vid]' \
--map [vid] -c:v libx264 -crf 23 -preset veryfast 3.mov
+-map [vid] -c:v libx264 -crf 23 -preset veryfast 2crazy-3.mov
 
 ]] 
